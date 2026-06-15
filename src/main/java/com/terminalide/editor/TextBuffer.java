@@ -1,6 +1,8 @@
 package com.terminalide.editor;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 
 public class TextBuffer {
@@ -12,6 +14,11 @@ public class TextBuffer {
     private boolean modified;
     private String filePath;
 
+    private record Snapshot(String[] content, int row, int col) {}
+    private final Deque<Snapshot> undoStack;
+    private final Deque<Snapshot> redoStack;
+    private static final int MAX_UNDO = 500;
+
     public TextBuffer() {
         this.lines = new ArrayList<>();
         this.lines.add(new StringBuilder());
@@ -20,6 +27,8 @@ public class TextBuffer {
         this.scrollRow = 0;
         this.scrollCol = 0;
         this.modified = false;
+        this.undoStack = new ArrayDeque<>();
+        this.redoStack = new ArrayDeque<>();
     }
 
     public TextBuffer(String content, String filePath) {
@@ -34,44 +43,85 @@ public class TextBuffer {
         }
     }
 
+    private void pushUndo() {
+        if (undoStack.size() >= MAX_UNDO) undoStack.removeLast();
+        String[] content = new String[lines.size()];
+        for (int i = 0; i < lines.size(); i++) content[i] = lines.get(i).toString();
+        undoStack.push(new Snapshot(content, cursorRow, cursorCol));
+        redoStack.clear();
+    }
+
+    public boolean canUndo() { return !undoStack.isEmpty(); }
+    public boolean canRedo() { return !redoStack.isEmpty(); }
+
+    public void undo() {
+        if (undoStack.isEmpty()) return;
+        redoStack.push(new Snapshot(snapshot(), cursorRow, cursorCol));
+        restoreFrom(undoStack.pop());
+        modified = true;
+    }
+
+    public void redo() {
+        if (redoStack.isEmpty()) return;
+        undoStack.push(new Snapshot(snapshot(), cursorRow, cursorCol));
+        restoreFrom(redoStack.pop());
+        modified = true;
+    }
+
+    private String[] snapshot() {
+        String[] content = new String[lines.size()];
+        for (int i = 0; i < lines.size(); i++) content[i] = lines.get(i).toString();
+        return content;
+    }
+
+    private void restoreFrom(Snapshot s) {
+        lines.clear();
+        for (String line : s.content) lines.add(new StringBuilder(line));
+        cursorRow = clamp(s.row, 0, lines.size() - 1);
+        cursorCol = clamp(s.col, 0, lines.get(cursorRow).length());
+    }
+
     public void insertChar(char c) {
+        pushUndo();
         lines.get(cursorRow).insert(cursorCol, c);
         cursorCol++;
         modified = true;
     }
 
     public void insertString(String s) {
+        pushUndo();
         lines.get(cursorRow).insert(cursorCol, s);
         cursorCol += s.length();
         modified = true;
     }
 
     public void backspace() {
+        pushUndo();
         if (cursorCol > 0) {
             lines.get(cursorRow).deleteCharAt(cursorCol - 1);
             cursorCol--;
-            modified = true;
         } else if (cursorRow > 0) {
             cursorCol = lines.get(cursorRow - 1).length();
             lines.get(cursorRow - 1).append(lines.get(cursorRow));
             lines.remove(cursorRow);
             cursorRow--;
-            modified = true;
         }
+        modified = true;
     }
 
     public void delete() {
+        pushUndo();
         if (cursorCol < lines.get(cursorRow).length()) {
             lines.get(cursorRow).deleteCharAt(cursorCol);
-            modified = true;
         } else if (cursorRow < lines.size() - 1) {
             lines.get(cursorRow).append(lines.get(cursorRow + 1));
             lines.remove(cursorRow + 1);
-            modified = true;
         }
+        modified = true;
     }
 
     public void newLine() {
+        pushUndo();
         String rest = lines.get(cursorRow).substring(cursorCol);
         lines.get(cursorRow).setLength(cursorCol);
         lines.add(cursorRow + 1, new StringBuilder(rest));
@@ -111,17 +161,12 @@ public class TextBuffer {
     }
 
     public void moveCursor(int dRow, int dCol) {
-        if (dRow != 0) {
-            setCursorRow(cursorRow + dRow);
-        }
-        if (dCol != 0) {
-            setCursorCol(cursorCol + dCol);
-        }
+        if (dRow != 0) setCursorRow(cursorRow + dRow);
+        if (dCol != 0) setCursorCol(cursorCol + dCol);
     }
 
     public void moveToLineStart() { cursorCol = 0; }
     public void moveToLineEnd() { cursorCol = lines.get(cursorRow).length(); }
-
     public void moveToStart() { cursorRow = 0; cursorCol = 0; }
     public void moveToEnd() { cursorRow = lines.size() - 1; cursorCol = lines.get(cursorRow).length(); }
 
@@ -145,12 +190,12 @@ public class TextBuffer {
         if (query.isEmpty()) return false;
         int startCol = cursorCol;
         for (int r = cursorRow; r < lines.size(); r++) {
-            int idx = indexOf(lines.get(r).toString(), query, caseSensitive, r == cursorRow ? startCol : 0);
+            int idx = indexOf(getLine(r), query, caseSensitive, r == cursorRow ? startCol : 0);
             if (idx >= 0) { cursorRow = r; cursorCol = idx + query.length(); return true; }
             startCol = 0;
         }
         for (int r = 0; r <= cursorRow; r++) {
-            int idx = indexOf(lines.get(r).toString(), query, caseSensitive, 0);
+            int idx = indexOf(getLine(r), query, caseSensitive, 0);
             int limit = (r == cursorRow) ? cursorCol : Integer.MAX_VALUE;
             if (idx >= 0 && idx < limit) { cursorRow = r; cursorCol = idx + query.length(); return true; }
         }
@@ -161,12 +206,12 @@ public class TextBuffer {
         if (query.isEmpty()) return false;
         int startCol = cursorCol - 1;
         for (int r = cursorRow; r >= 0; r--) {
-            int idx = lastIndexOf(lines.get(r).toString(), query, caseSensitive, r == cursorRow ? startCol : Integer.MAX_VALUE);
+            int idx = lastIndexOf(getLine(r), query, caseSensitive, r == cursorRow ? startCol : Integer.MAX_VALUE);
             if (idx >= 0) { cursorRow = r; cursorCol = idx; return true; }
             startCol = Integer.MAX_VALUE;
         }
         for (int r = lines.size() - 1; r >= cursorRow; r--) {
-            int idx = lastIndexOf(lines.get(r).toString(), query, caseSensitive, Integer.MAX_VALUE);
+            int idx = lastIndexOf(getLine(r), query, caseSensitive, Integer.MAX_VALUE);
             int limit = (r == cursorRow) ? cursorCol : -1;
             if (idx >= 0 && idx >= limit) { cursorRow = r; cursorCol = idx; return true; }
         }
@@ -182,8 +227,7 @@ public class TextBuffer {
     private static int lastIndexOf(String line, String query, boolean caseSensitive, int from) {
         String s = caseSensitive ? line : line.toLowerCase();
         String q = caseSensitive ? query : query.toLowerCase();
-        int idx = -1;
-        int pos = 0;
+        int idx = -1, pos = 0;
         while ((pos = s.indexOf(q, pos)) >= 0 && (from < 0 || pos <= from)) {
             idx = pos;
             pos++;
@@ -211,5 +255,31 @@ public class TextBuffer {
 
     private static int clamp(int value, int min, int max) {
         return Math.min(Math.max(value, min), max);
+    }
+
+    public void deleteRange(int startRow, int startCol, int endRow, int endCol) {
+        pushUndo();
+        if (startRow == endRow) {
+            lines.get(startRow).delete(startCol, endCol);
+        } else {
+            String endRest = lines.get(endRow).substring(endCol);
+            lines.get(startRow).setLength(startCol);
+            lines.get(startRow).append(endRest);
+            for (int i = endRow; i > startRow; i--) lines.remove(i);
+        }
+        cursorRow = startRow;
+        cursorCol = startCol;
+        modified = true;
+    }
+
+    public String getTextRange(int startRow, int startCol, int endRow, int endCol) {
+        if (startRow == endRow) {
+            return lines.get(startRow).substring(startCol, endCol);
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(lines.get(startRow).substring(startCol)).append("\n");
+        for (int i = startRow + 1; i < endRow; i++) sb.append(lines.get(i)).append("\n");
+        sb.append(lines.get(endRow), 0, endCol);
+        return sb.toString();
     }
 }

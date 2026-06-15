@@ -253,6 +253,8 @@ public class MainWindow {
                     case 'f' -> { enterSearchMode(); return; }
                     case 'g' -> { enterGotoLineMode(); return; }
                     case 'd' -> { dupeLine(); return; }
+                    case 'z' -> { if (!tabs.isEmpty()) tabs.get(activeTab).undo(); return; }
+                    case 'y' -> { if (!tabs.isEmpty()) tabs.get(activeTab).redo(); return; }
                 }
             }
         }
