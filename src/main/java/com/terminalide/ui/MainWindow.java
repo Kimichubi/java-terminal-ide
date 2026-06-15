@@ -281,7 +281,7 @@ public class MainWindow {
             char c = key.getCharacter();
             if (c >= '1' && c <= '9') {
                 int idx = c - '1';
-                if (idx < tabs.size()) { activeTab = idx; focus = Focus.EDITOR; }
+                if (idx < tabs.size()) { activeTab = idx; focus = Focus.EDITOR; detectCurrentLanguage(); }
                 return;
             }
         }
@@ -384,6 +384,13 @@ public class MainWindow {
         }
     }
 
+    private void detectCurrentLanguage() {
+        if (!tabs.isEmpty()) {
+            String fp = tabs.get(activeTab).getFilePath();
+            editorPanel.detectLanguage(fp);
+        }
+    }
+
     private void dupeLine() {
         if (tabs.isEmpty()) return;
         TextBuffer b = tabs.get(activeTab);
@@ -433,11 +440,11 @@ public class MainWindow {
 
     private void openFile(Path path) {
         try {
-            // Check if already open
             String pathStr = path.toString();
             for (int i = 0; i < tabs.size(); i++) {
                 if (pathStr.equals(tabs.get(i).getFilePath())) {
                     activeTab = i;
+                    editorPanel.detectLanguage(pathStr);
                     focus = Focus.EDITOR;
                     return;
                 }
@@ -446,6 +453,7 @@ public class MainWindow {
             TextBuffer buffer = new TextBuffer(content, pathStr);
             tabs.add(buffer);
             activeTab = tabs.size() - 1;
+            editorPanel.detectLanguage(pathStr);
             focus = Focus.EDITOR;
         } catch (IOException e) {
             // Could show error

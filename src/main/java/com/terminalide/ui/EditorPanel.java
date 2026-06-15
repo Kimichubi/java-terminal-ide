@@ -18,6 +18,8 @@ public class EditorPanel {
 
     public void setSearchQuery(String query) { this.searchQuery = query; }
 
+    public void detectLanguage(String filePath) { highlighter.detectLanguage(filePath); }
+
     public void draw(TextGraphics tg, int startX, int startY, int width, int height,
                       TextBuffer buffer, String tabTitle, boolean focused) {
         drawBorder(tg, startX, startY, width, height, tabTitle, focused);
