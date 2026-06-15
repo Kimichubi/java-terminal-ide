@@ -183,15 +183,23 @@ public class EditorPanel {
             Character c = key.getCharacter();
             if (c != null && !ctrl && !key.isAltDown()) {
                 if (buffer.hasSelection()) buffer.deleteSelected();
+                if (c == '}' && buffer.getCursorCol() == 0 && buffer.getCursorRow() > 0) {
+                    buffer.dedentClosingBrace();
+                }
                 buffer.insertChar(c);
                 return true;
             }
         }
 
         switch (key.getKeyType()) {
+            case Tab -> {
+                if (shift) buffer.dedent();
+                else buffer.insertTab();
+                return true;
+            }
             case Enter -> {
                 if (buffer.hasSelection()) buffer.deleteSelected();
-                buffer.newLine();
+                buffer.autoIndentNewLine();
                 return true;
             }
             case Backspace -> {

@@ -305,6 +305,84 @@ public class TextBuffer {
         modified = true;
     }
 
+    public String getIndent(int row) {
+        String line = getLine(row);
+        int i = 0;
+        while (i < line.length() && (line.charAt(i) == ' ' || line.charAt(i) == '\t')) i++;
+        return line.substring(0, i);
+    }
+
+    public void insertTab() {
+        if (hasSelection()) {
+            indentSelection();
+        } else {
+            insertString("    ");
+        }
+    }
+
+    private void indentSelection() {
+        pushUndo();
+        int start = getSelStartRow();
+        int end = getSelEndRow();
+        for (int i = start; i <= end; i++) {
+            lines.get(i).insert(0, "    ");
+        }
+        if (selAnchorCol >= 0) selAnchorCol += 4;
+        cursorCol += 4;
+        modified = true;
+    }
+
+    public void dedent() {
+        if (hasSelection()) {
+            dedentSelection();
+        } else {
+            String indent = getIndent(cursorRow);
+            if (indent.isEmpty()) return;
+            pushUndo();
+            int remove = Math.min(4, indent.length());
+            lines.get(cursorRow).delete(0, remove);
+            cursorCol = Math.max(0, cursorCol - remove);
+            modified = true;
+        }
+    }
+
+    private void dedentSelection() {
+        pushUndo();
+        int start = getSelStartRow();
+        int end = getSelEndRow();
+        for (int i = start; i <= end; i++) {
+            String indent = getIndent(i);
+            int remove = Math.min(4, indent.length());
+            if (remove > 0) lines.get(i).delete(0, remove);
+        }
+        modified = true;
+    }
+
+    public void autoIndentNewLine() {
+        pushUndo();
+        String indent = getIndent(cursorRow);
+        String rest = lines.get(cursorRow).substring(cursorCol);
+        lines.get(cursorRow).setLength(cursorCol);
+        // Copy indent to new line
+        lines.add(cursorRow + 1, new StringBuilder(indent + rest));
+        cursorRow++;
+        cursorCol = indent.length();
+        redoStack.clear();
+        modified = true;
+    }
+
+    public void dedentClosingBrace() {
+        if (cursorCol == 0 && cursorRow > 0) {
+            String indent = getIndent(cursorRow);
+            if (indent.length() >= 4) {
+                pushUndo();
+                lines.get(cursorRow).delete(0, 4);
+                cursorCol = 0;
+                modified = true;
+            }
+        }
+    }
+
     public void updateScroll(int visibleRows, int visibleCols) {
         if (cursorRow < scrollRow) scrollRow = cursorRow;
         if (cursorRow >= scrollRow + visibleRows) scrollRow = cursorRow - visibleRows + 1;
