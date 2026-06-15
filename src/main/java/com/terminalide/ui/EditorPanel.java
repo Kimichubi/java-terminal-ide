@@ -101,6 +101,30 @@ public class EditorPanel {
                         idx += lowerQuery.length();
                     }
                 }
+
+                // Highlight selection
+                if (focused && buffer.hasSelection()) {
+                    int selStartRow = buffer.getSelStartRow();
+                    int selEndRow = buffer.getSelEndRow();
+                    if (lineIdx >= selStartRow && lineIdx <= selEndRow) {
+                        int selStart = (lineIdx == selStartRow) ? buffer.getSelStartCol() : 0;
+                        int selEnd = (lineIdx == selEndRow) ? buffer.getSelEndCol() : line.length();
+                        selStart = Math.max(selStart - visibleStart, 0);
+                        selEnd = Math.min(selEnd - visibleStart, visibleCols);
+                        if (selEnd > selStart) {
+                            tg.setBackgroundColor(TextColor.ANSI.CYAN);
+                            tg.setForegroundColor(TextColor.ANSI.BLACK);
+                            for (int s = selStart; s < selEnd; s++) {
+                                int cx = textStartX + s;
+                                int si = visibleStart + s;
+                                char ch = si < line.length() ? line.charAt(si) : ' ';
+                                tg.setCharacter(cx, drawY, ch);
+                            }
+                            tg.setBackgroundColor(TextColor.ANSI.DEFAULT);
+                            tg.setForegroundColor(TextColor.ANSI.DEFAULT);
+                        }
+                    }
+                }
             }
         }
 
@@ -152,44 +176,83 @@ public class EditorPanel {
     }
 
     public boolean handleInput(KeyStroke key, TextBuffer buffer) {
+        boolean shift = key.isShiftDown();
+        boolean ctrl = key.isCtrlDown();
+
         if (key.getKeyType() == KeyType.Character) {
             Character c = key.getCharacter();
-            if (c != null) {
+            if (c != null && !ctrl && !key.isAltDown()) {
+                if (buffer.hasSelection()) buffer.deleteSelected();
                 buffer.insertChar(c);
                 return true;
             }
         }
+
         switch (key.getKeyType()) {
-            case Enter -> { buffer.newLine(); return true; }
-            case Backspace -> { buffer.backspace(); return true; }
-            case Delete -> { buffer.delete(); return true; }
-            case ArrowUp -> { buffer.moveCursor(-1, 0); return true; }
-            case ArrowDown -> { buffer.moveCursor(1, 0); return true; }
+            case Enter -> {
+                if (buffer.hasSelection()) buffer.deleteSelected();
+                buffer.newLine();
+                return true;
+            }
+            case Backspace -> {
+                if (buffer.hasSelection()) { buffer.deleteSelected(); return true; }
+                buffer.backspace();
+                return true;
+            }
+            case Delete -> {
+                if (buffer.hasSelection()) { buffer.deleteSelected(); return true; }
+                buffer.delete();
+                return true;
+            }
+            case ArrowUp -> {
+                if (!shift) buffer.clearSelection();
+                else buffer.extendSelection();
+                buffer.moveCursor(-1, 0);
+                return true;
+            }
+            case ArrowDown -> {
+                if (!shift) buffer.clearSelection();
+                else buffer.extendSelection();
+                buffer.moveCursor(1, 0);
+                return true;
+            }
             case ArrowLeft -> {
-                if (key.isCtrlDown()) buffer.moveWordLeft();
+                if (!shift) buffer.clearSelection();
+                else buffer.extendSelection();
+                if (ctrl) buffer.moveWordLeft();
                 else buffer.moveCursor(0, -1);
                 return true;
             }
             case ArrowRight -> {
-                if (key.isCtrlDown()) buffer.moveWordRight();
+                if (!shift) buffer.clearSelection();
+                else buffer.extendSelection();
+                if (ctrl) buffer.moveWordRight();
                 else buffer.moveCursor(0, 1);
                 return true;
             }
             case Home -> {
-                if (key.isCtrlDown()) buffer.moveToStart();
+                if (!shift) buffer.clearSelection();
+                else buffer.extendSelection();
+                if (ctrl) buffer.moveToStart();
                 else buffer.moveToLineStart();
                 return true;
             }
             case End -> {
-                if (key.isCtrlDown()) buffer.moveToEnd();
+                if (!shift) buffer.clearSelection();
+                else buffer.extendSelection();
+                if (ctrl) buffer.moveToEnd();
                 else buffer.moveToLineEnd();
                 return true;
             }
             case PageUp -> {
+                if (!shift) buffer.clearSelection();
+                else buffer.extendSelection();
                 for (int i = 0; i < 20; i++) buffer.moveCursor(-1, 0);
                 return true;
             }
             case PageDown -> {
+                if (!shift) buffer.clearSelection();
+                else buffer.extendSelection();
                 for (int i = 0; i < 20; i++) buffer.moveCursor(1, 0);
                 return true;
             }

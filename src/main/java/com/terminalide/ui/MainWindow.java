@@ -40,6 +40,7 @@ public class MainWindow {
     private StringBuilder inputBuffer;
     private String lastSearchQuery;
     private boolean caseSensitiveSearch;
+    private String clipboard;
 
     private boolean running;
     private int termWidth;
@@ -255,6 +256,10 @@ public class MainWindow {
                     case 'd' -> { dupeLine(); return; }
                     case 'z' -> { if (!tabs.isEmpty()) tabs.get(activeTab).undo(); return; }
                     case 'y' -> { if (!tabs.isEmpty()) tabs.get(activeTab).redo(); return; }
+                    case 'c' -> { copySelection(); return; }
+                    case 'x' -> { cutSelection(); return; }
+                    case 'v' -> { pasteClipboard(); return; }
+                    case 'a' -> { selectAll(); return; }
                 }
             }
         }
@@ -386,6 +391,37 @@ public class MainWindow {
         b.moveToLineEnd();
         b.newLine();
         b.insertString(line);
+    }
+
+    private void copySelection() {
+        if (tabs.isEmpty()) return;
+        TextBuffer b = tabs.get(activeTab);
+        if (b.hasSelection()) clipboard = b.getSelectedText();
+        else clipboard = b.getLine(b.getCursorRow());
+    }
+
+    private void cutSelection() {
+        if (tabs.isEmpty()) return;
+        TextBuffer b = tabs.get(activeTab);
+        if (b.hasSelection()) {
+            clipboard = b.getSelectedText();
+            b.deleteSelected();
+        }
+    }
+
+    private void pasteClipboard() {
+        if (tabs.isEmpty() || clipboard == null) return;
+        TextBuffer b = tabs.get(activeTab);
+        if (b.hasSelection()) b.deleteSelected();
+        b.insertText(clipboard);
+    }
+
+    private void selectAll() {
+        if (tabs.isEmpty()) return;
+        TextBuffer b = tabs.get(activeTab);
+        b.moveToStart();
+        b.startSelection();
+        b.moveToEnd();
     }
 
     private void openSelectedFile() {

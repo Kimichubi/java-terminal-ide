@@ -14,6 +14,11 @@ public class TextBuffer {
     private boolean modified;
     private String filePath;
 
+    // Selection state
+    private int selAnchorRow = -1;
+    private int selAnchorCol;
+    private boolean selecting;
+
     private record Snapshot(String[] content, int row, int col) {}
     private final Deque<Snapshot> undoStack;
     private final Deque<Snapshot> redoStack;
@@ -233,6 +238,71 @@ public class TextBuffer {
             pos++;
         }
         return idx;
+    }
+
+    public void startSelection() {
+        selAnchorRow = cursorRow;
+        selAnchorCol = cursorCol;
+        selecting = true;
+    }
+
+    public void extendSelection() {
+        if (!selecting) startSelection();
+    }
+
+    public void clearSelection() { selecting = false; selAnchorRow = -1; }
+    public boolean hasSelection() {
+        return selecting && !(selAnchorRow == cursorRow && selAnchorCol == cursorCol);
+    }
+
+    public int getSelStartRow() {
+        return Math.min(selAnchorRow, cursorRow);
+    }
+
+    public int getSelStartCol() {
+        if (selAnchorRow < cursorRow) return selAnchorCol;
+        if (selAnchorRow > cursorRow) return cursorCol;
+        return Math.min(selAnchorCol, cursorCol);
+    }
+
+    public int getSelEndRow() {
+        return Math.max(selAnchorRow, cursorRow);
+    }
+
+    public int getSelEndCol() {
+        if (selAnchorRow < cursorRow) return cursorCol;
+        if (selAnchorRow > cursorRow) return selAnchorCol;
+        return Math.max(selAnchorCol, cursorCol);
+    }
+
+    public String getSelectedText() {
+        if (!hasSelection()) return "";
+        return getTextRange(getSelStartRow(), getSelStartCol(), getSelEndRow(), getSelEndCol());
+    }
+
+    public void deleteSelected() {
+        if (!hasSelection()) return;
+        deleteRange(getSelStartRow(), getSelStartCol(), getSelEndRow(), getSelEndCol());
+        clearSelection();
+    }
+
+    public void insertText(String text) {
+        if (hasSelection()) deleteSelected();
+        if (text.isEmpty()) return;
+        pushUndo();
+        String[] parts = text.split("\n", -1);
+        String rest = lines.get(cursorRow).substring(cursorCol);
+        lines.get(cursorRow).setLength(cursorCol);
+        lines.get(cursorRow).append(parts[0]);
+        for (int i = 1; i < parts.length; i++) {
+            lines.add(cursorRow + i, new StringBuilder(parts[i]));
+        }
+        int lastIdx = cursorRow + parts.length - 1;
+        lines.get(lastIdx).append(rest);
+        cursorRow = lastIdx;
+        cursorCol = parts[parts.length - 1].length();
+        redoStack.clear();
+        modified = true;
     }
 
     public void updateScroll(int visibleRows, int visibleCols) {
