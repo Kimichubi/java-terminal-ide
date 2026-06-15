@@ -275,4 +275,27 @@ public class FileBrowser {
         this.selectedIndex = 0;
         buildTree();
     }
+
+    public void refresh() {
+        int oldIndex = selectedIndex;
+        Path oldPath = selectedIndex >= 0 && selectedIndex < flatList.size() ? flatList.get(selectedIndex).path : null;
+        buildTree();
+        if (oldPath != null) {
+            for (int i = 0; i < flatList.size(); i++) {
+                if (flatList.get(i).path.equals(oldPath)) {
+                    selectedIndex = i;
+                    return;
+                }
+            }
+        }
+        selectedIndex = Math.min(oldIndex, flatList.size() - 1);
+    }
+
+    public Path getParentOfSelected() {
+        if (selectedIndex >= 0 && selectedIndex < flatList.size()) {
+            FileNode node = flatList.get(selectedIndex);
+            return node.isDirectory ? node.path : node.path.getParent();
+        }
+        return rootPath;
+    }
 }

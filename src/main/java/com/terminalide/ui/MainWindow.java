@@ -35,7 +35,7 @@ public class MainWindow {
     private enum Focus { BROWSER, EDITOR }
     private Focus focus;
 
-    private enum Mode { NORMAL, SEARCH, GOTO_LINE }
+    private enum Mode { NORMAL, SEARCH, GOTO_LINE, CREATE_FILE, CREATE_DIR, RENAME_FILE }
     private Mode mode;
     private StringBuilder inputBuffer;
     private String lastSearchQuery;
@@ -150,6 +150,12 @@ public class MainWindow {
             drawPrompt(promptY, editorX, editorW, "Search" + (caseSensitiveSearch ? " [Aa]" : " [..]"));
         } else if (mode == Mode.GOTO_LINE) {
             drawPrompt(promptY, editorX, editorW, "Go to line");
+        } else if (mode == Mode.CREATE_FILE) {
+            drawPrompt(promptY, editorX, editorW, "New file name");
+        } else if (mode == Mode.CREATE_DIR) {
+            drawPrompt(promptY, editorX, editorW, "New dir name");
+        } else if (mode == Mode.RENAME_FILE) {
+            drawPrompt(promptY, editorX, editorW, "Rename to");
         }
 
         // Draw status bar
@@ -158,7 +164,14 @@ public class MainWindow {
             String fileName = buffer.getFilePath() != null
                     ? Path.of(buffer.getFilePath()).getFileName().toString()
                     : "untitled";
-            String modeStr = mode == Mode.SEARCH ? "SEARCH" : mode == Mode.GOTO_LINE ? "GOTO" : focus == Focus.EDITOR ? "EDIT" : "BROWSE";
+            String modeStr = switch (mode) {
+                case SEARCH -> "SEARCH";
+                case GOTO_LINE -> "GOTO";
+                case CREATE_FILE -> "NEW FILE";
+                case CREATE_DIR -> "NEW DIR";
+                case RENAME_FILE -> "RENAME";
+                default -> focus == Focus.EDITOR ? "EDIT" : "BROWSE";
+            };
             String lineInfo = String.format("%d:%d | %d lines", buffer.getCursorRow() + 1, buffer.getCursorCol() + 1, buffer.getLineCount());
             statusBar.draw(textGraphics, statusY, termWidth, modeStr, fileName, buffer.isModified(), lineInfo);
         } else {
@@ -235,6 +248,10 @@ public class MainWindow {
             handleGotoLineInput(key);
             return;
         }
+        if (mode == Mode.CREATE_FILE || mode == Mode.CREATE_DIR || mode == Mode.RENAME_FILE) {
+            handleFilePromptInput(key);
+            return;
+        }
 
         // NORMAL mode
         if (key.getKeyType() == KeyType.Character && key.getCharacter() != null) {
@@ -276,6 +293,16 @@ public class MainWindow {
             return;
         }
 
+        // File browser shortcuts (when browser focused)
+        if (focus == Focus.BROWSER && key.getKeyType() == KeyType.Delete) {
+            deleteSelectedFile();
+            return;
+        }
+        if (focus == Focus.BROWSER && key.getKeyType() == KeyType.F2) {
+            startRenameFile();
+            return;
+        }
+
         // Tab switching with Alt+number
         if (key.getKeyType() == KeyType.Character && key.isAltDown() && key.getCharacter() != null) {
             char c = key.getCharacter();
@@ -288,6 +315,12 @@ public class MainWindow {
 
         // Dispatch to focused component
         if (focus == Focus.BROWSER) {
+            // Browser-specific keys
+            if (key.getKeyType() == KeyType.Character && key.getCharacter() != null && !key.isCtrlDown() && !key.isAltDown()) {
+                char c = key.getCharacter();
+                if (c == 'n') { startNewFile(); return; }
+                if (c == 'N') { startNewDir(); return; }
+            }
             boolean handled = fileBrowser.handleInput(key);
             if (handled && key.getKeyType() == KeyType.Enter) {
                 Path selected = fileBrowser.getSelectedPath();
@@ -378,6 +411,79 @@ public class MainWindow {
         if (key.getKeyType() == KeyType.Character && key.getCharacter() != null) {
             char c = key.getCharacter();
             if (c >= '0' && c <= '9') {
+                inputBuffer.append(c);
+            }
+            return;
+        }
+    }
+
+    private void startNewFile() {
+        mode = Mode.CREATE_FILE;
+        inputBuffer.setLength(0);
+    }
+
+    private void startNewDir() {
+        mode = Mode.CREATE_DIR;
+        inputBuffer.setLength(0);
+    }
+
+    private void deleteSelectedFile() {
+        Path selected = fileBrowser.getSelectedPath();
+        if (selected != null) {
+            try {
+                fileManager.delete(selected);
+                fileBrowser.refresh();
+            } catch (IOException ignored) {}
+        }
+    }
+
+    private void startRenameFile() {
+        Path selected = fileBrowser.getSelectedPath();
+        if (selected != null) {
+            mode = Mode.RENAME_FILE;
+            inputBuffer.setLength(0);
+            inputBuffer.append(selected.getFileName().toString());
+        }
+    }
+
+    private void handleFilePromptInput(KeyStroke key) {
+        if (key.getKeyType() == KeyType.Escape) {
+            mode = Mode.NORMAL;
+            inputBuffer.setLength(0);
+            return;
+        }
+        if (key.getKeyType() == KeyType.Enter) {
+            String name = inputBuffer.toString().trim();
+            if (!name.isEmpty()) {
+                try {
+                    Path parent = fileBrowser.getParentOfSelected();
+                    if (mode == Mode.CREATE_FILE) {
+                        Path created = fileManager.createFile(parent, name);
+                        fileBrowser.refresh();
+                        openFile(created);
+                    } else if (mode == Mode.CREATE_DIR) {
+                        fileManager.createDirectory(parent, name);
+                        fileBrowser.refresh();
+                    } else if (mode == Mode.RENAME_FILE) {
+                        Path selected = fileBrowser.getSelectedPath();
+                        if (selected != null) {
+                            fileManager.rename(selected, name);
+                            fileBrowser.refresh();
+                        }
+                    }
+                } catch (IOException ignored) {}
+            }
+            mode = Mode.NORMAL;
+            inputBuffer.setLength(0);
+            return;
+        }
+        if (key.getKeyType() == KeyType.Backspace) {
+            if (!inputBuffer.isEmpty()) inputBuffer.deleteCharAt(inputBuffer.length() - 1);
+            return;
+        }
+        if (key.getKeyType() == KeyType.Character && key.getCharacter() != null) {
+            char c = key.getCharacter();
+            if (c != '/' && c != '\\') {
                 inputBuffer.append(c);
             }
             return;

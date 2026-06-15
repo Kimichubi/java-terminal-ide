@@ -32,4 +32,38 @@ public class FileManager {
     public boolean isDirectory(Path path) {
         return Files.isDirectory(path);
     }
+
+    public Path createFile(Path parent, String name) throws IOException {
+        Path p = parent.resolve(name);
+        Files.createFile(p);
+        return p;
+    }
+
+    public Path createDirectory(Path parent, String name) throws IOException {
+        Path p = parent.resolve(name);
+        Files.createDirectories(p);
+        return p;
+    }
+
+    public void delete(Path path) throws IOException {
+        if (Files.isDirectory(path)) {
+            try (var s = Files.walk(path)) {
+                s.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                    try { Files.delete(p); } catch (IOException ignored) {}
+                });
+            }
+        } else {
+            Files.delete(path);
+        }
+    }
+
+    public Path rename(Path path, String newName) throws IOException {
+        Path target = path.resolveSibling(newName);
+        Files.move(path, target);
+        return target;
+    }
+
+    public boolean exists(Path path) {
+        return Files.exists(path);
+    }
 }
