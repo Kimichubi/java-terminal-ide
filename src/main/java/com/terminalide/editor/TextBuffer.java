@@ -125,6 +125,72 @@ public class TextBuffer {
     public void moveToStart() { cursorRow = 0; cursorCol = 0; }
     public void moveToEnd() { cursorRow = lines.size() - 1; cursorCol = lines.get(cursorRow).length(); }
 
+    public void moveWordLeft() {
+        String line = getLine(cursorRow);
+        while (cursorCol > 0 && !isWordChar(line.charAt(cursorCol - 1))) cursorCol--;
+        while (cursorCol > 0 && isWordChar(line.charAt(cursorCol - 1))) cursorCol--;
+    }
+
+    public void moveWordRight() {
+        String line = getLine(cursorRow);
+        while (cursorCol < line.length() && !isWordChar(line.charAt(cursorCol))) cursorCol++;
+        while (cursorCol < line.length() && isWordChar(line.charAt(cursorCol))) cursorCol++;
+    }
+
+    private static boolean isWordChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
+    }
+
+    public boolean findNext(String query, boolean caseSensitive) {
+        if (query.isEmpty()) return false;
+        int startCol = cursorCol;
+        for (int r = cursorRow; r < lines.size(); r++) {
+            int idx = indexOf(lines.get(r).toString(), query, caseSensitive, r == cursorRow ? startCol : 0);
+            if (idx >= 0) { cursorRow = r; cursorCol = idx + query.length(); return true; }
+            startCol = 0;
+        }
+        for (int r = 0; r <= cursorRow; r++) {
+            int idx = indexOf(lines.get(r).toString(), query, caseSensitive, 0);
+            int limit = (r == cursorRow) ? cursorCol : Integer.MAX_VALUE;
+            if (idx >= 0 && idx < limit) { cursorRow = r; cursorCol = idx + query.length(); return true; }
+        }
+        return false;
+    }
+
+    public boolean findPrev(String query, boolean caseSensitive) {
+        if (query.isEmpty()) return false;
+        int startCol = cursorCol - 1;
+        for (int r = cursorRow; r >= 0; r--) {
+            int idx = lastIndexOf(lines.get(r).toString(), query, caseSensitive, r == cursorRow ? startCol : Integer.MAX_VALUE);
+            if (idx >= 0) { cursorRow = r; cursorCol = idx; return true; }
+            startCol = Integer.MAX_VALUE;
+        }
+        for (int r = lines.size() - 1; r >= cursorRow; r--) {
+            int idx = lastIndexOf(lines.get(r).toString(), query, caseSensitive, Integer.MAX_VALUE);
+            int limit = (r == cursorRow) ? cursorCol : -1;
+            if (idx >= 0 && idx >= limit) { cursorRow = r; cursorCol = idx; return true; }
+        }
+        return false;
+    }
+
+    private static int indexOf(String line, String query, boolean caseSensitive, int from) {
+        String s = caseSensitive ? line : line.toLowerCase();
+        String q = caseSensitive ? query : query.toLowerCase();
+        return s.indexOf(q, from);
+    }
+
+    private static int lastIndexOf(String line, String query, boolean caseSensitive, int from) {
+        String s = caseSensitive ? line : line.toLowerCase();
+        String q = caseSensitive ? query : query.toLowerCase();
+        int idx = -1;
+        int pos = 0;
+        while ((pos = s.indexOf(q, pos)) >= 0 && (from < 0 || pos <= from)) {
+            idx = pos;
+            pos++;
+        }
+        return idx;
+    }
+
     public void updateScroll(int visibleRows, int visibleCols) {
         if (cursorRow < scrollRow) scrollRow = cursorRow;
         if (cursorRow >= scrollRow + visibleRows) scrollRow = cursorRow - visibleRows + 1;

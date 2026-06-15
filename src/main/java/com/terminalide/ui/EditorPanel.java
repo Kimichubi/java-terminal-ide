@@ -10,10 +10,13 @@ import com.googlecode.lanterna.input.KeyType;
 
 public class EditorPanel {
     private final SyntaxHighlighter highlighter;
+    private String searchQuery;
 
     public EditorPanel() {
         this.highlighter = new SyntaxHighlighter();
     }
+
+    public void setSearchQuery(String query) { this.searchQuery = query; }
 
     public void draw(TextGraphics tg, int startX, int startY, int width, int height,
                       TextBuffer buffer, String tabTitle, boolean focused) {
@@ -47,7 +50,7 @@ public class EditorPanel {
             tg.setForegroundColor(TextColor.ANSI.BLACK_BRIGHT);
             tg.setCharacter(textStartX - 1, drawY, '\u2502');
 
-            // Text line
+            // Text line with syntax + search highlights
             String line = buffer.getLine(lineIdx);
             int visibleStart = buffer.getScrollCol();
             String visibleText = line.substring(Math.min(visibleStart, line.length()));
@@ -79,6 +82,24 @@ public class EditorPanel {
                 if (pos < visibleText.length()) {
                     tg.setForegroundColor(TextColor.ANSI.DEFAULT);
                     tg.putString(textStartX + pos, drawY, visibleText.substring(pos));
+                }
+
+                // Highlight search matches
+                if (searchQuery != null && !searchQuery.isEmpty()) {
+                    String lowerLine = visibleText.toLowerCase();
+                    String lowerQuery = searchQuery.toLowerCase();
+                    int idx = 0;
+                    while ((idx = lowerLine.indexOf(lowerQuery, idx)) >= 0) {
+                        tg.setBackgroundColor(TextColor.ANSI.YELLOW);
+                        tg.setForegroundColor(TextColor.ANSI.BLACK);
+                        for (int j = 0; j < lowerQuery.length(); j++) {
+                            int cx = textStartX + idx + j;
+                            tg.setCharacter(cx, drawY, visibleText.charAt(idx + j));
+                        }
+                        tg.setBackgroundColor(TextColor.ANSI.DEFAULT);
+                        tg.setForegroundColor(TextColor.ANSI.DEFAULT);
+                        idx += lowerQuery.length();
+                    }
                 }
             }
         }
@@ -144,8 +165,16 @@ public class EditorPanel {
             case Delete -> { buffer.delete(); return true; }
             case ArrowUp -> { buffer.moveCursor(-1, 0); return true; }
             case ArrowDown -> { buffer.moveCursor(1, 0); return true; }
-            case ArrowLeft -> { buffer.moveCursor(0, -1); return true; }
-            case ArrowRight -> { buffer.moveCursor(0, 1); return true; }
+            case ArrowLeft -> {
+                if (key.isCtrlDown()) buffer.moveWordLeft();
+                else buffer.moveCursor(0, -1);
+                return true;
+            }
+            case ArrowRight -> {
+                if (key.isCtrlDown()) buffer.moveWordRight();
+                else buffer.moveCursor(0, 1);
+                return true;
+            }
             case Home -> {
                 if (key.isCtrlDown()) buffer.moveToStart();
                 else buffer.moveToLineStart();
