@@ -2,6 +2,7 @@
 target/
 !.mvn/wrapper/maven-wrapper.jar
 pom.xml.versionsBackup
+dependency-reduced-pom.xml
 
 # IDE
 .idea/

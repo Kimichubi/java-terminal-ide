@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 public class MainWindow {
@@ -41,6 +42,9 @@ public class MainWindow {
     private String lastSearchQuery;
     private boolean caseSensitiveSearch;
     private String clipboard;
+    private final LinkedHashSet<String> recentFiles;
+    private String toastMessage;
+    private long toastUntil;
 
     private boolean running;
     private int termWidth;
@@ -58,6 +62,7 @@ public class MainWindow {
         this.inputBuffer = new StringBuilder();
         this.running = false;
         this.caseSensitiveSearch = false;
+        this.recentFiles = new LinkedHashSet<>();
     }
 
     public void run() {
@@ -108,6 +113,10 @@ public class MainWindow {
             if (key != null) {
                 handleGlobalInput(key);
             } else {
+                // Clear toast after timer
+                if (toastMessage != null && System.currentTimeMillis() > toastUntil) {
+                    toastMessage = null;
+                }
                 try { Thread.sleep(5); } catch (InterruptedException ignored) {}
             }
         }
@@ -158,7 +167,16 @@ public class MainWindow {
             drawPrompt(promptY, editorX, editorW, "Rename to");
         }
 
-        // Draw status bar
+        // Draw toast message
+        if (toastMessage != null) {
+            int toastY = statusY - 1;
+            int toastX = Math.max(0, (termWidth - toastMessage.length() - 4) / 2);
+            textGraphics.setBackgroundColor(TextColor.ANSI.YELLOW);
+            textGraphics.setForegroundColor(TextColor.ANSI.BLACK);
+            textGraphics.putString(toastX, toastY, "  " + toastMessage + "  ");
+            textGraphics.setBackgroundColor(TextColor.ANSI.DEFAULT);
+            textGraphics.setForegroundColor(TextColor.ANSI.DEFAULT);
+        }
         if (!tabs.isEmpty()) {
             TextBuffer buffer = tabs.get(activeTab);
             String fileName = buffer.getFilePath() != null
@@ -276,6 +294,7 @@ public class MainWindow {
                     case 'c' -> { copySelection(); return; }
                     case 'x' -> { cutSelection(); return; }
                     case 'v' -> { pasteClipboard(); return; }
+                    case 'r' -> { openRecentFile(); return; }
                     case 'a' -> { selectAll(); return; }
                 }
             }
@@ -432,8 +451,11 @@ public class MainWindow {
         if (selected != null) {
             try {
                 fileManager.delete(selected);
+                showToast("Deleted: " + selected.getFileName());
                 fileBrowser.refresh();
-            } catch (IOException ignored) {}
+            } catch (IOException e) {
+                showToast("Failed to delete: " + e.getMessage());
+            }
         }
     }
 
@@ -459,19 +481,24 @@ public class MainWindow {
                     Path parent = fileBrowser.getParentOfSelected();
                     if (mode == Mode.CREATE_FILE) {
                         Path created = fileManager.createFile(parent, name);
+                        showToast("Created: " + created.getFileName());
                         fileBrowser.refresh();
                         openFile(created);
                     } else if (mode == Mode.CREATE_DIR) {
                         fileManager.createDirectory(parent, name);
+                        showToast("Created dir: " + name);
                         fileBrowser.refresh();
                     } else if (mode == Mode.RENAME_FILE) {
                         Path selected = fileBrowser.getSelectedPath();
                         if (selected != null) {
                             fileManager.rename(selected, name);
+                            showToast("Renamed to: " + name);
                             fileBrowser.refresh();
                         }
                     }
-                } catch (IOException ignored) {}
+                } catch (IOException e) {
+                    showToast("Error: " + e.getMessage());
+                }
             }
             mode = Mode.NORMAL;
             inputBuffer.setLength(0);
@@ -487,6 +514,39 @@ public class MainWindow {
                 inputBuffer.append(c);
             }
             return;
+        }
+    }
+
+    private void showToast(String msg) {
+        toastMessage = msg;
+        toastUntil = System.currentTimeMillis() + 2500;
+    }
+
+    private void trackRecent(String path) {
+        if (path != null) {
+            recentFiles.remove(path);
+            recentFiles.add(path);
+            if (recentFiles.size() > 20) {
+                var it = recentFiles.iterator();
+                it.next();
+                it.remove();
+            }
+        }
+    }
+
+    private void openRecentFile() {
+        if (recentFiles.isEmpty()) {
+            showToast("No recent files");
+            return;
+        }
+        // Open the most recent file
+        String[] recents = recentFiles.toArray(new String[0]);
+        Path recent = Path.of(recents[recents.length - 1]);
+        if (Files.exists(recent)) {
+            openFile(recent);
+        } else {
+            recentFiles.remove(recent.toString());
+            showToast("File not found: " + recent.getFileName());
         }
     }
 
@@ -509,8 +569,13 @@ public class MainWindow {
     private void copySelection() {
         if (tabs.isEmpty()) return;
         TextBuffer b = tabs.get(activeTab);
-        if (b.hasSelection()) clipboard = b.getSelectedText();
-        else clipboard = b.getLine(b.getCursorRow());
+        if (b.hasSelection()) {
+            clipboard = b.getSelectedText();
+            showToast("Copied " + clipboard.lines().count() + " lines");
+        } else {
+            clipboard = b.getLine(b.getCursorRow());
+            showToast("Copied line");
+        }
     }
 
     private void cutSelection() {
@@ -519,6 +584,7 @@ public class MainWindow {
         if (b.hasSelection()) {
             clipboard = b.getSelectedText();
             b.deleteSelected();
+            showToast("Cut " + clipboard.lines().count() + " lines");
         }
     }
 
@@ -560,9 +626,10 @@ public class MainWindow {
             tabs.add(buffer);
             activeTab = tabs.size() - 1;
             editorPanel.detectLanguage(pathStr);
+            trackRecent(pathStr);
             focus = Focus.EDITOR;
         } catch (IOException e) {
-            // Could show error
+            showToast("Cannot open: " + path.getFileName());
         }
     }
 
@@ -589,16 +656,20 @@ public class MainWindow {
             if (buffer.getFilePath() != null) {
                 fileManager.writeFile(Path.of(buffer.getFilePath()), buffer.getContent());
                 buffer.setModified(false);
+                showToast("Saved: " + Path.of(buffer.getFilePath()).getFileName());
+                trackRecent(buffer.getFilePath());
             } else {
                 Path selected = fileBrowser.getSelectedPath();
                 if (selected != null && !fileBrowser.isSelectedDirectory()) {
                     fileManager.writeFile(selected, buffer.getContent());
                     buffer.setFilePath(selected.toString());
                     buffer.setModified(false);
+                    showToast("Saved: " + selected.getFileName());
+                    trackRecent(selected.toString());
                 }
             }
         } catch (IOException e) {
-            // Could show error
+            showToast("Save failed: " + e.getMessage());
         }
     }
 
